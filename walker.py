@@ -1,11 +1,13 @@
+from os import wait
 import numpy as np
+import pandas as pd
 from numpy.lib.type_check import real
 from scipy.interpolate import interp1d
 
 # rotation matrix
 rotate = lambda theta : np.array(( (np.cos(theta), -np.sin(theta)),
                 (np.sin(theta),  np.cos(theta)) ))
-deg2rads = lambda deg : np.pi / 180
+deg2rads = lambda deg : deg * np.pi / 180
 
 class Walker:
     """
@@ -15,18 +17,16 @@ class Walker:
     def __init__(self, lattice_constant, temperature):
         self.lattice_constant = lattice_constant # in terms of nm
         self.temperature = temperature # in terms of Kelvin
-        # convert to electron volts
-        self.temperature *= 8.6e-5
 
 class Graphene_Walker(Walker):
 
     def __init__(self, lattice_constant, temperature):
         super().__init__(lattice_constant, temperature)
         # primitive lattice vectors
-        self.a1 = np.array([np.sqrt(3)/2, 1/2]) * lattice_constant
-        self.a2 = np.array([np.sqrt(3)/2, -1/2]) * lattice_constant
+        self.a1 = np.array([np.sqrt(3)/2, 1/2]) * self.lattice_constant
+        self.a2 = np.array([np.sqrt(3)/2, -1/2]) * self.lattice_constant
         # nearest neighbor vectors
-        AB = np.array([1/np.sqrt(3), 0]) * lattice_constant
+        AB = np.array([1/np.sqrt(3), 0]) * self.lattice_constant
         self.a_transition = np.array([
             AB,
             rotate(deg2rads(120)) @ AB,
@@ -40,7 +40,7 @@ class Graphene_Walker(Walker):
 
         Return : np.ndarray of shape (nparticles, njumps + 1, 2)
         """
-        initial_positions = np.random.randint(-100, 100, size=(2, nparticles)) # Choose lattice sites
+        initial_positions = np.random.randint(-1, 1, size=(2, nparticles)) # Choose lattice sites
         x = initial_positions[0, :] * self.a1[0] + initial_positions[1, :] * self.a2[0]
         y = initial_positions[0, :] * self.a1[1] + initial_positions[1, :] * self.a2[1]
         initial_positions = np.array([x, y])
@@ -56,38 +56,43 @@ class Graphene_Walker(Walker):
         tracks = np.cumsum(tracks, axis=1)
         return tracks
     
-    def get_tracks(self, pot, nsteps=300, njumps=100, nparticles=10):
+    def get_tracks(self, pot, nsteps=300, njumps=100, nparticles=10, endT=1e6):
         """
         get `nsteps` timesteps of random walk with `njumps` monte carlo sim
         for `nparticles`
 
         U : Lattice Potential instance
-        nsteps : number of timesteps
+        nsteps : number of evenly spaced timestamps to sample trajectories up `endT`
         njumps : number of monte carlo hops
         nparticles : number of particles
+        endT : the time range to sample trajectories
 
         Return : np.ndarray array of shape (nparticles, nsteps + 1, 2)
         """
         T = self.temperature
         tracks = self.walk(njumps, nparticles)
-        escape_rate = np.exp(pot.U(tracks[:, 0], tracks[:, 1]) / T)
+        escape_rate = np.exp(-pot.U(tracks[:, :, 0], tracks[:, :, 1]) / T)
         wait_times = np.empty((nparticles, njumps + 1))
         wait_times[:, 0] = np.zeros((nparticles))
         wait_times[:, 1:] = np.random.exponential(escape_rate)[:, :-1]
-        
-        # sum of wait times to gives time when molecule hops
+        # sum of wait times gives time when molecule hops
         total_time = np.cumsum(wait_times, axis=1)
-        # rescale trajectories in time (OK because we're just estimating power law exponents which are scale invariant)
-        # we rescale anyway for deep learning
-        total_time_normed = total_time / np.linalg.norm(total_time, np.inf, axis=1)[:, np.newaxis] * nsteps
         
         # get evenly spaced timesteps as if in lab setting
-        tOut = np.arange(0, nsteps + 1, 1, dtype=np.uint8) # frame number
+        tOut = np.linspace(0, endT, nsteps + 1) # time value
         real_space_tracks = np.empty(shape=(nparticles, nsteps + 1, 2))
         for particle in range(nparticles):
             for i in [0, 1]:
-                real_space_tracks[particle, :, i] = interp1d(total_time_normed[particle, :], tracks[particle, :, i], 
+                real_space_tracks[particle, :, i] = interp1d(total_time[particle, :], tracks[particle, :, i], 
                                                     kind='previous', 
                                                     bounds_error=False)(tOut)
 
-        return real_space_tracks
+        df = pd.DataFrame()
+        r_squared = (real_space_tracks[:, :, 0] - real_space_tracks[:,np.newaxis, 0, 0]) ** 2 + (real_space_tracks[:, :, 1] - real_space_tracks[:, np.newaxis, 0, 1]) ** 2
+        for particle in range(nparticles):
+            tmp = pd.DataFrame(real_space_tracks[particle], columns=['x', 'y'])
+            tmp['particle'] = particle
+            tmp['time'] = tOut
+            tmp['r^2'] = r_squared[particle, :]
+            df = pd.concat([df, tmp])
+        return df
