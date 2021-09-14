@@ -8,7 +8,7 @@ class Lattice:
 
     def __init__(self, lattice_constant, amplitude):
         self.lattice_constant = lattice_constant
-        self.amplitude = amplitude
+        self.amplitude = amplitude # in terms of eV
     
 class Triangular_Lattice(Lattice):
 
