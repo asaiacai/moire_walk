@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from numpy.lib.type_check import real
 from scipy.interpolate import interp1d
+from scipy.stats import linregress
 
 # rotation matrix
 rotate = lambda theta : np.array(( (np.cos(theta), -np.sin(theta)),
@@ -34,13 +35,13 @@ class Graphene_Walker(Walker):
         ], dtype=np.float64)
         self.b_transition = -self.a_transition
 
-    def walk(self, njumps=100, nparticles=10):
+    def walk(self, njumps=100, nparticles=10, init=1):
         """
         Perform `njumps` of monte carlo hops with `nparticles`
 
         Return : np.ndarray of shape (nparticles, njumps + 1, 2)
         """
-        initial_positions = np.random.randint(-1, 1, size=(2, nparticles)) # Choose lattice sites
+        initial_positions = np.random.randint(-init, init, size=(2, nparticles)) # Choose lattice sites
         x = initial_positions[0, :] * self.a1[0] + initial_positions[1, :] * self.a2[0]
         y = initial_positions[0, :] * self.a1[1] + initial_positions[1, :] * self.a2[1]
         initial_positions = np.array([x, y])
@@ -56,7 +57,37 @@ class Graphene_Walker(Walker):
         tracks = np.cumsum(tracks, axis=1)
         return tracks
     
-    def get_tracks(self, pot, nsteps=300, njumps=100, nparticles=10, endT=1e6):
+    def get_exponents(self, pot, njumps=100, nparticles=10,init=1):
+       
+        T = self.temperature
+        tracks = self.walk(njumps, nparticles, init)
+        escape_rate = np.exp(-pot.U(tracks[:, :, 0], tracks[:, :, 1]) / T)
+        wait_times = np.empty((nparticles, njumps + 1))
+        wait_times[:, 0] = np.zeros((nparticles))
+        wait_times[:, 1:] = np.random.exponential(escape_rate)[:, :-1]
+        # sum of wait times gives time when molecule hops
+        total_time = np.cumsum(wait_times, axis=1)
+        
+        r_squared = (tracks[:, :, 0] - tracks[:,np.newaxis, 0, 0]) ** 2 + (tracks[:, :, 1] - tracks[:, np.newaxis, 0, 1]) ** 2
+        expos = []
+        for particle in range(nparticles):
+            x, y = np.log(total_time[particle][1:]), np.log(r_squared[particle][1:])
+            mask = np.isfinite(x) & np.isfinite(y) # for numerical stability when taking log
+            slope, intercept, r, p, se = linregress(x[mask], y[mask])
+            expos.append(slope)
+        return np.array(expos)
+    
+    def get_waits(self, pot, njumps=100, nparticles=10, init=1):
+        T = self.temperature
+        tracks = self.walk(njumps, nparticles, init)
+        escape_rate = np.exp(-pot.U(tracks[:, :, 0], tracks[:, :, 1]) / T)
+        wait_times = np.empty((nparticles, njumps + 1))
+        wait_times[:, 0] = np.zeros((nparticles))
+        wait_times[:, 1:] = np.random.exponential(escape_rate)[:, :-1]
+        return wait_times
+        
+    
+    def get_tracks(self, pot, nsteps=300, njumps=100, nparticles=10, endT=1e6, init=1):
         """
         get `nsteps` timesteps of random walk with `njumps` monte carlo sim
         for `nparticles`
@@ -70,7 +101,7 @@ class Graphene_Walker(Walker):
         Return : np.ndarray array of shape (nparticles, nsteps + 1, 2)
         """
         T = self.temperature
-        tracks = self.walk(njumps, nparticles)
+        tracks = self.walk(njumps, nparticles, init)
         escape_rate = np.exp(-pot.U(tracks[:, :, 0], tracks[:, :, 1]) / T)
         wait_times = np.empty((nparticles, njumps + 1))
         wait_times[:, 0] = np.zeros((nparticles))
@@ -79,7 +110,11 @@ class Graphene_Walker(Walker):
         total_time = np.cumsum(wait_times, axis=1)
         
         # get evenly spaced timesteps as if in lab setting
-        tOut = np.linspace(0, endT, nsteps + 1) # time value
+        if endT:
+            tOut = np.linspace(0, endT, nsteps + 1) # time value
+        else:
+            endT = np.min(total_time[:, -1])
+            tOut = np.linspace(0, endT, nsteps + 1) # time value
         real_space_tracks = np.empty(shape=(nparticles, nsteps + 1, 2))
         for particle in range(nparticles):
             for i in [0, 1]:
