@@ -1,6 +1,5 @@
 import numpy as np
-from tensorflow import keras
-from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.models import Sequential, load_model, Model
 
 def classification_on_real(dx, steps=50,fbm=False):
     N=np.shape(dx)[0]
@@ -32,7 +31,7 @@ def get_activations(dx, steps=50,fbm=False):
     model = load_model(net_file)
 
     layer_name = 'concatenate_1'
-    intermediate_layer_model = keras.Model(inputs=model.input,
+    intermediate_layer_model = Model(inputs=model.input,
                                      outputs=model.get_layer(layer_name).output)
     
     activations = []

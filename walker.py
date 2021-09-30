@@ -1,4 +1,4 @@
-# from os import wait
+from os import wait
 import numpy as np
 import pandas as pd
 from numpy.lib.type_check import real
@@ -56,34 +56,14 @@ class Graphene_Walker(Walker):
         tracks[:, 1:, :] = jumps
         tracks = np.cumsum(tracks, axis=1)
         return tracks
-    
-    def get_exponents(self, pot, njumps=100, nparticles=10,init=1):
-       
+     
+    def get_waits(self, pot, tracks, njumps=100, nparticles=10, init=1):
         T = self.temperature
-        tracks = self.walk(njumps, nparticles, init)
         escape_rate = np.exp(-pot.U(tracks[:, :, 0], tracks[:, :, 1]) / T)
         wait_times = np.empty((nparticles, njumps + 1))
         wait_times[:, 0] = np.zeros((nparticles))
         wait_times[:, 1:] = np.random.exponential(escape_rate)[:, :-1]
-        # sum of wait times gives time when molecule hops
-        total_time = np.cumsum(wait_times, axis=1)
-        
-        r_squared = (tracks[:, :, 0] - tracks[:,np.newaxis, 0, 0]) ** 2 + (tracks[:, :, 1] - tracks[:, np.newaxis, 0, 1]) ** 2
-        expos = []
-        for particle in range(nparticles):
-            x, y = np.log(total_time[particle][1:]), np.log(r_squared[particle][1:])
-            mask = np.isfinite(x) & np.isfinite(y) # for numerical stability when taking log
-            slope, intercept, r, p, se = linregress(x[mask], y[mask])
-            expos.append(slope)
-        return np.array(expos)
-    
-    def get_waits(self, pot, njumps=100, nparticles=10, init=1):
-        T = self.temperature
-        tracks = self.walk(njumps, nparticles, init)
-        escape_rate = np.exp(-pot.U(tracks[:, :, 0], tracks[:, :, 1]) / T)
-        wait_times = np.empty((nparticles, njumps + 1))
-        wait_times[:, 0] = np.zeros((nparticles))
-        wait_times[:, 1:] = np.random.exponential(escape_rate)[:, :-1]
+        self.mean_wait = np.mean(wait_times)
         return wait_times
         
     
@@ -100,12 +80,8 @@ class Graphene_Walker(Walker):
 
         Return : np.ndarray array of shape (nparticles, nsteps + 1, 2)
         """
-        T = self.temperature
         tracks = self.walk(njumps, nparticles, init)
-        escape_rate = np.exp(-pot.U(tracks[:, :, 0], tracks[:, :, 1]) / T)
-        wait_times = np.empty((nparticles, njumps + 1))
-        wait_times[:, 0] = np.zeros((nparticles))
-        wait_times[:, 1:] = np.random.exponential(escape_rate)[:, :-1]
+        wait_times = self.get_waits(pot, tracks, njumps=njumps, nparticles=nparticles, init=init)
         # sum of wait times gives time when molecule hops
         total_time = np.cumsum(wait_times, axis=1)
         
@@ -113,7 +89,7 @@ class Graphene_Walker(Walker):
         if endT:
             tOut = np.linspace(0, endT, nsteps + 1) # time value
         else:
-            endT = np.min(total_time[:, -1])
+            endT = self.mean_wait * 100
             tOut = np.linspace(0, endT, nsteps + 1) # time value
         real_space_tracks = np.empty(shape=(nparticles, nsteps + 1, 2))
         for particle in range(nparticles):
