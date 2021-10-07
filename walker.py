@@ -89,7 +89,9 @@ class Graphene_Walker(Walker):
         if endT:
             tOut = np.linspace(0, endT, nsteps + 1) # time value
         else:
-            endT = self.mean_wait * 100
+#             endT = self.mean_wait * 100
+#             tOut = np.linspace(0, endT, nsteps + 1) # time value
+            endT = self.mean_wait * njumps / 5
             tOut = np.linspace(0, endT, nsteps + 1) # time value
         real_space_tracks = np.empty(shape=(nparticles, nsteps + 1, 2))
         for particle in range(nparticles):
