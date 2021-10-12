@@ -45,7 +45,7 @@ def get_activations(dx, steps=50,fbm=False):
     net_file = 'models/{}_new_model.h5'.format(steps)
     model = load_model(net_file)
 
-    layer_name = 'dense_2'
+    layer_name = 'concatenate_1'
     intermediate_layer_model = Model(inputs=model.input,
                                      outputs=model.get_layer(layer_name).output)
     
