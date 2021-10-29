@@ -1,5 +1,16 @@
 import numpy as np
 from tensorflow.keras.models import Sequential, load_model, Model
+import pdb
+
+def autocorr(x):
+    result = np.correlate(x, x, mode='full')
+    return result[np.int(result.size/2):]
+
+def predict_1D_fbm(dx, stepsActual, reg_model):
+    dx = autocorr(dx[0, :, 0])
+    dx = np.reshape(dx, [1, np.size(dx), 1])
+    pX = reg_model.predict(dx)
+    return pX
 
 def classification_on_real(dx, steps=50,fbm=False):
     N=np.shape(dx)[0]
@@ -25,19 +36,24 @@ def classification_on_real(dx, steps=50,fbm=False):
             fbm_alpha_pred = fbm_model.predict(dummy)
     return values, predictions
 
-def alpha_on_real(dx, steps=50,fbm=False):
+def alpha_on_real(dx, predictions, fbm_alpha, ctrw_alpha, steps=50):
     N=np.shape(dx)[0]
-    net_file = 'models/model-alphaCTRW-estimate_300.h5'.format(steps)
-    model = load_model(net_file)
     
     values = []
     for j in range(N):
         dummy = np.zeros((1,steps-1,1))
         dummy[0,:,:] = np.reshape(dx[j,:], (steps-1, 1))
-        y_pred = model.predict(dummy) # get the results for 1D 
-
-        ymean = np.mean(y_pred,axis=0) # calculate mean prediction of N-dimensional trajectory 
-        values.append(ymean.round(decimals=2))
+        if predictions[j][1] == 0:
+            model = fbm_alpha
+            y_pred = predict_1D_fbm(dummy, steps, model)
+            values.append(y_pred * 2)
+        elif predictions[j][1] == 2:
+            model = ctrw_alpha
+            y_pred = model.predict(dummy)
+            ymean = np.mean(y_pred, axis=0)
+            values.append(ymean)
+        else:
+            values.append(np.array([1]))
     return values
 
 def get_activations(dx, steps=50,fbm=False):

@@ -45,17 +45,13 @@ class Graphene_Walker(Walker):
         x = initial_positions[0, :] * self.a1[0] + initial_positions[1, :] * self.a2[0]
         y = initial_positions[0, :] * self.a1[1] + initial_positions[1, :] * self.a2[1]
         initial_positions = np.array([x, y])
-        tracks = np.empty((nparticles, njumps + 1, 2))
-        tracks[:, 0, :] = initial_positions.T
-        a_neighbors = np.random.randint(3, size=(nparticles, njumps // 2))
-        b_neighbors = np.random.randint(3, size=(nparticles, njumps // 2))
-        a_jumps, b_jumps = self.a_transition[a_neighbors, :], self.b_transition[b_neighbors, :]
-        jumps = np.empty((nparticles, njumps, 2))
-        jumps[:, ::2, :] = a_jumps
-        jumps[:, 1::2, :] = b_jumps
-        tracks[:, 1:, :] = jumps
-        tracks = np.cumsum(tracks, axis=1)
-        return tracks
+        a_jumps = self.a_transition[np.random.randint(3, size=(nparticles, njumps // 2)), :]
+        b_jumps = self.b_transition[np.random.randint(3, size=(nparticles, njumps // 2)), :]
+        jumps = np.empty((nparticles, njumps+1, 2))
+        jumps[:, 0, :] = initial_positions.T
+        jumps[:, 1::2, :] = a_jumps
+        jumps[:, 2::2, :] = b_jumps
+        return np.cumsum(jumps, axis=1)
      
     def get_waits(self, pot, tracks, njumps=100, nparticles=10, init=1):
         T = self.temperature
@@ -89,8 +85,6 @@ class Graphene_Walker(Walker):
         if endT:
             tOut = np.linspace(0, endT, nsteps + 1) # time value
         else:
-#             endT = self.mean_wait * 100
-#             tOut = np.linspace(0, endT, nsteps + 1) # time value
             endT = self.mean_wait * njumps
             tOut = np.linspace(0, endT, nsteps + 1) # time value
         real_space_tracks = np.empty(shape=(nparticles, nsteps + 1, 2))
@@ -106,6 +100,5 @@ class Graphene_Walker(Walker):
             tmp = pd.DataFrame(real_space_tracks[particle], columns=['x', 'y'])
             tmp['particle'] = particle
             tmp['time'] = tOut
-            tmp['r^2'] = r_squared[particle, :]
             df = pd.concat([df, tmp])
         return df
