@@ -92,7 +92,7 @@ class Graphene_Walker(Walker):
             for i in [0, 1]:
                 real_space_tracks[particle, :, i] = interp1d(total_time[particle, :], tracks[particle, :, i], 
                                                     kind='previous', 
-                                                    bounds_error=False)(tOut)
+                                                    bounds_error=True, assume_sorted=True)(tOut)
 
         df = pd.DataFrame()
         r_squared = (real_space_tracks[:, :, 0] - real_space_tracks[:,np.newaxis, 0, 0]) ** 2 + (real_space_tracks[:, :, 1] - real_space_tracks[:, np.newaxis, 0, 1]) ** 2
