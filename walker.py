@@ -4,6 +4,10 @@ import pandas as pd
 from numpy.lib.type_check import real
 from scipy.interpolate import interp1d
 from scipy.stats import linregress
+from joblib import Parallel, delayed
+import pdb
+from multiprocessing import Pool, sharedctypes #  Process pool
+from tqdm import tqdm
 
 # rotation matrix
 rotate = lambda theta : np.array(( (np.cos(theta), -np.sin(theta)),
@@ -76,29 +80,67 @@ class Graphene_Walker(Walker):
 
         Return : np.ndarray array of shape (nparticles, nsteps + 1, 2)
         """
-        tracks = self.walk(njumps, nparticles, init)
-        wait_times = self.get_waits(pot, tracks, njumps=njumps, nparticles=nparticles, init=init)
-        # sum of wait times gives time when molecule hops
-        total_time = np.cumsum(wait_times, axis=1)
         
         # get evenly spaced timesteps as if in lab setting
         if endT:
-            tOut = np.linspace(0, endT, nsteps + 1) # time value
-        else:
-            endT = self.mean_wait * njumps
-            tOut = np.linspace(0, endT, nsteps + 1) # time value
-        real_space_tracks = np.empty(shape=(nparticles, nsteps + 1, 2))
-        for particle in range(nparticles):
-            for i in [0, 1]:
-                real_space_tracks[particle, :, i] = interp1d(total_time[particle, :], tracks[particle, :, i], 
-                                                    kind='previous', 
-                                                    bounds_error=True, assume_sorted=True)(tOut)
+            tFinal = np.linspace(0, endT, nsteps + 1) # time value
+            idx = np.arange(nsteps + 1)
+#         else:
+#             endT = self.mean_wait * njumps
+#             tOut = np.linspace(0, endT, nsteps + 1) # time value
+        
+        real_space_tracks = np.empty((nparticles, nsteps + 1, 2))
+        last_time = np.zeros((nparticles, 1))
+        last_pos = np.zeros((nparticles, 1, 2))
+        tracks = np.zeros((nparticles, njumps+1, 2))
+        wait_times = np.zeros((nparticles, njumps+1))
+        
+#         def resample(particle):
+#             tmp_pos = to_array(last_pos)
+#             tmp_time = to_array(last_time)
+#             tmp_tracks = to_array(shared_tracks)
 
-        df = pd.DataFrame()
-        r_squared = (real_space_tracks[:, :, 0] - real_space_tracks[:,np.newaxis, 0, 0]) ** 2 + (real_space_tracks[:, :, 1] - real_space_tracks[:, np.newaxis, 0, 1]) ** 2
+#             last_idx = np.argwhere(wait_times < curr_end)[-1]
+#             tmp_time[particle] = wait_times[particle, last_idx]
+#             tmp_pos[particle, :] = tracks[particle, last_idx, :]
+#             for i in [0, 1]:
+#                 tmp_tracks[particle, iOut, i] = np.interp(tOut, wait_times[particle, :, i],
+#                                                              tracks[particle, :, i], 
+#                                                              kind='previous',
+#                                                              bounds_error=True,
+#                                                              assume_sorted=True)(tOut)
+        
+        curr_end = 0
+        while curr_end < endT:
+            tracks[:] = self.walk(njumps, nparticles, init) + last_pos
+            wait_times[:] = self.get_waits(pot, tracks, njumps=njumps, nparticles=nparticles, init=init)
+            wait_times[:] = np.cumsum(wait_times, axis=1) + last_time
+            curr_end = np.min(wait_times[:, -1])
+            included = tFinal < curr_end
+            tFinal, idx, tOut, iOut = tFinal[~included], idx[~included], tFinal[included], idx[included]
+            for particle in range(nparticles):
+                last_idx = np.argwhere(wait_times[particle] < curr_end)[-1]
+                last_time[particle] = wait_times[particle, last_idx]
+                last_pos[particle, :] = tracks[particle, last_idx, :]
+                for i in [0, 1]:
+                    j = np.searchsorted(wait_times[particle, :], tOut, side='left') - 1
+                    real_space_tracks[particle, iOut, i] = tracks[particle, j, i]
+        dfs = []
+        tFinal = np.linspace(0, endT, nsteps + 1)
         for particle in range(nparticles):
             tmp = pd.DataFrame(real_space_tracks[particle], columns=['x', 'y'])
             tmp['particle'] = particle
-            tmp['time'] = tOut
-            df = pd.concat([df, tmp])
-        return df
+            tmp['time'] = tFinal
+            dfs.append(tmp)
+        return pd.concat(dfs)
+        
+def to_shared(arr):
+    arr = np.ctypeslib.as_ctypes(arr)
+    return sharedctypes.RawArray(arr._type_, arr)
+
+def to_array(arr):
+    return np.ctypeslib.as_array(arr)
+
+        
+        
+    

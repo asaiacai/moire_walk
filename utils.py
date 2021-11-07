@@ -12,10 +12,11 @@ def predict_1D_fbm(dx, stepsActual, reg_model):
     pX = reg_model.predict(dx)
     return pX
 
-def classification_on_real(dx, steps=50,fbm=False):
+def classification_on_real(dx, steps=50,fbm=False, model=None):
     N=np.shape(dx)[0]
-    net_file = 'models/{}_new_model.h5'.format(steps)
-    model = load_model(net_file)
+    if model is None:
+        net_file = 'models/{}_new_model.h5'.format(steps)
+        model = load_model(net_file)
     
     if fbm:
         fbm_model = load_model('models/{}_fbm_alpha.h5'.format(steps))
