@@ -2,11 +2,8 @@ from os import wait
 import numpy as np
 import pandas as pd
 from numpy.lib.type_check import real
-from scipy.interpolate import interp1d
 from scipy.stats import linregress
-from joblib import Parallel, delayed
 import pdb
-from multiprocessing import Pool, sharedctypes #  Process pool
 from tqdm import tqdm
 
 # rotation matrix
@@ -80,7 +77,7 @@ class Graphene_Walker(Walker):
 
         Return : np.ndarray array of shape (nparticles, nsteps + 1, 2)
         """
-        
+        nsteps += 1
         # get evenly spaced timesteps as if in lab setting
         if endT:
             tFinal = np.linspace(0, endT, nsteps + 1) # time value
@@ -113,7 +110,7 @@ class Graphene_Walker(Walker):
         curr_end = 0
         while curr_end < endT:
             tracks[:] = self.walk(njumps, nparticles, init) + last_pos
-            wait_times[:] = self.get_waits(pot, tracks, njumps=njumps, nparticles=nparticles, init=init)
+            wait_times[:] = self.get_waits(pot, tracks, njumps=njumps, nparticles=nparticles)
             wait_times[:] = np.cumsum(wait_times, axis=1) + last_time
             curr_end = np.min(wait_times[:, -1])
             included = tFinal < curr_end
@@ -123,24 +120,13 @@ class Graphene_Walker(Walker):
                 last_time[particle] = wait_times[particle, last_idx]
                 last_pos[particle, :] = tracks[particle, last_idx, :]
                 for i in [0, 1]:
-                    j = np.searchsorted(wait_times[particle, :], tOut, side='left') - 1
+                    j = np.searchsorted(wait_times[particle, :], tOut, side='right') - 1
                     real_space_tracks[particle, iOut, i] = tracks[particle, j, i]
         dfs = []
         tFinal = np.linspace(0, endT, nsteps + 1)
         for particle in range(nparticles):
-            tmp = pd.DataFrame(real_space_tracks[particle], columns=['x', 'y'])
+            tmp = pd.DataFrame(real_space_tracks[particle, 1:], columns=['x', 'y'])
             tmp['particle'] = particle
-            tmp['time'] = tFinal
+            tmp['time'] = tFinal[1:]
             dfs.append(tmp)
         return pd.concat(dfs)
-        
-def to_shared(arr):
-    arr = np.ctypeslib.as_ctypes(arr)
-    return sharedctypes.RawArray(arr._type_, arr)
-
-def to_array(arr):
-    return np.ctypeslib.as_array(arr)
-
-        
-        
-    
