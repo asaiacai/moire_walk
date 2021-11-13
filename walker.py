@@ -2,8 +2,9 @@ from os import wait
 import numpy as np
 import pandas as pd
 from numpy.lib.type_check import real
-from scipy.interpolate import interp1d
 from scipy.stats import linregress
+import pdb
+from tqdm import tqdm
 
 # rotation matrix
 rotate = lambda theta : np.array(( (np.cos(theta), -np.sin(theta)),
@@ -35,13 +36,16 @@ class Graphene_Walker(Walker):
         ], dtype=np.float64)
         self.b_transition = -self.a_transition
 
-    def walk(self, njumps=100, nparticles=10, init=1):
+    def walk(self, njumps=100, nparticles=10, init=0):
         """
         Perform `njumps` of monte carlo hops with `nparticles`
 
         Return : np.ndarray of shape (nparticles, njumps + 1, 2)
         """
-        initial_positions = np.random.randint(-init, init, size=(2, nparticles)) # Choose lattice sites
+        if init != 0:
+            initial_positions = np.random.randint(-init, init, size=(2, nparticles)) # Choose lattice sites
+        else:
+            initial_positions = np.zeros((2, nparticles)) # Choose lattice sites
         x = initial_positions[0, :] * self.a1[0] + initial_positions[1, :] * self.a2[0]
         y = initial_positions[0, :] * self.a1[1] + initial_positions[1, :] * self.a2[1]
         initial_positions = np.array([x, y])
@@ -53,7 +57,7 @@ class Graphene_Walker(Walker):
         jumps[:, 2::2, :] = b_jumps
         return np.cumsum(jumps, axis=1)
      
-    def get_waits(self, pot, tracks, njumps=100, nparticles=10, init=1):
+    def get_waits(self, pot, tracks, njumps=100, nparticles=10, init=0):
         T = self.temperature
         escape_rate = np.exp(-pot.U(tracks[:, :, 0], tracks[:, :, 1]) / T)
         wait_times = np.empty((nparticles, njumps + 1))
@@ -63,7 +67,7 @@ class Graphene_Walker(Walker):
         return wait_times
         
     
-    def get_tracks(self, pot, nsteps=300, njumps=100, nparticles=10, endT=1e6, init=1):
+    def get_tracks(self, pot, nsteps=300, njumps=100, nparticles=10, endT=1e6, init=0):
         """
         get `nsteps` timesteps of random walk with `njumps` monte carlo sim
         for `nparticles`
@@ -76,29 +80,42 @@ class Graphene_Walker(Walker):
 
         Return : np.ndarray array of shape (nparticles, nsteps + 1, 2)
         """
-        tracks = self.walk(njumps, nparticles, init)
-        wait_times = self.get_waits(pot, tracks, njumps=njumps, nparticles=nparticles, init=init)
-        # sum of wait times gives time when molecule hops
-        total_time = np.cumsum(wait_times, axis=1)
-        
+        nsteps += 1
         # get evenly spaced timesteps as if in lab setting
         if endT:
-            tOut = np.linspace(0, endT, nsteps + 1) # time value
-        else:
-            endT = self.mean_wait * njumps
-            tOut = np.linspace(0, endT, nsteps + 1) # time value
-        real_space_tracks = np.empty(shape=(nparticles, nsteps + 1, 2))
+            tFinal = np.linspace(0, endT, nsteps + 1) # time value
+            idx = np.arange(nsteps + 1)
+#         else:
+#             endT = self.mean_wait * njumps
+#             tOut = np.linspace(0, endT, nsteps + 1) # time value
+        
+        real_space_tracks = np.empty((nparticles, nsteps + 1, 2))
+        last_time = np.zeros((nparticles, 1))
+        last_pos = np.zeros((nparticles, 1, 2))
+        tracks = np.zeros((nparticles, njumps+1, 2))
+        wait_times = np.zeros((nparticles, njumps+1))
+        
+        curr_end = 0
+        while curr_end < endT:
+            tracks[:] = self.walk(njumps, nparticles, init) + last_pos
+            init = 0
+            wait_times[:] = self.get_waits(pot, tracks, njumps=njumps, nparticles=nparticles)
+            wait_times[:] = np.cumsum(wait_times, axis=1) + last_time
+            curr_end = np.min(wait_times[:, -1])
+            included = tFinal < curr_end
+            tFinal, idx, tOut, iOut = tFinal[~included], idx[~included], tFinal[included], idx[included]
+            for particle in range(nparticles):
+                last_idx = np.argwhere(wait_times[particle] < curr_end)[-1]
+                last_time[particle] = wait_times[particle, last_idx]
+                last_pos[particle, :] = tracks[particle, last_idx, :]
+                j = np.searchsorted(wait_times[particle, :], tOut, side='right') - 1
+                real_space_tracks[particle, iOut, :] = tracks[particle, j, :]
+        dfs = []
+        tFinal = np.linspace(0, endT, nsteps + 1)
         for particle in range(nparticles):
-            for i in [0, 1]:
-                real_space_tracks[particle, :, i] = interp1d(total_time[particle, :], tracks[particle, :, i], 
-                                                    kind='previous', 
-                                                    bounds_error=False)(tOut)
-
-        df = pd.DataFrame()
-        r_squared = (real_space_tracks[:, :, 0] - real_space_tracks[:,np.newaxis, 0, 0]) ** 2 + (real_space_tracks[:, :, 1] - real_space_tracks[:, np.newaxis, 0, 1]) ** 2
-        for particle in range(nparticles):
-            tmp = pd.DataFrame(real_space_tracks[particle], columns=['x', 'y'])
+            tmp = pd.DataFrame(real_space_tracks[particle, 1:], columns=['x', 'y'])
             tmp['particle'] = particle
-            tmp['time'] = tOut
-            df = pd.concat([df, tmp])
-        return df
+            tmp['time'] = tFinal[1:]
+            dfs.append(tmp)
+        print("{} done".format(self.temperature))
+        return pd.concat(dfs)
