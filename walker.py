@@ -36,13 +36,16 @@ class Graphene_Walker(Walker):
         ], dtype=np.float64)
         self.b_transition = -self.a_transition
 
-    def walk(self, njumps=100, nparticles=10, init=1):
+    def walk(self, njumps=100, nparticles=10, init=0):
         """
         Perform `njumps` of monte carlo hops with `nparticles`
 
         Return : np.ndarray of shape (nparticles, njumps + 1, 2)
         """
-        initial_positions = np.random.randint(-init, init, size=(2, nparticles)) # Choose lattice sites
+        if init != 0:
+            initial_positions = np.random.randint(-init, init, size=(2, nparticles)) # Choose lattice sites
+        else:
+            initial_positions = np.zeros((2, nparticles)) # Choose lattice sites
         x = initial_positions[0, :] * self.a1[0] + initial_positions[1, :] * self.a2[0]
         y = initial_positions[0, :] * self.a1[1] + initial_positions[1, :] * self.a2[1]
         initial_positions = np.array([x, y])
@@ -54,7 +57,7 @@ class Graphene_Walker(Walker):
         jumps[:, 2::2, :] = b_jumps
         return np.cumsum(jumps, axis=1)
      
-    def get_waits(self, pot, tracks, njumps=100, nparticles=10, init=1):
+    def get_waits(self, pot, tracks, njumps=100, nparticles=10, init=0):
         T = self.temperature
         escape_rate = np.exp(-pot.U(tracks[:, :, 0], tracks[:, :, 1]) / T)
         wait_times = np.empty((nparticles, njumps + 1))
@@ -64,7 +67,7 @@ class Graphene_Walker(Walker):
         return wait_times
         
     
-    def get_tracks(self, pot, nsteps=300, njumps=100, nparticles=10, endT=1e6, init=1):
+    def get_tracks(self, pot, nsteps=300, njumps=100, nparticles=10, endT=1e6, init=0):
         """
         get `nsteps` timesteps of random walk with `njumps` monte carlo sim
         for `nparticles`
@@ -92,24 +95,10 @@ class Graphene_Walker(Walker):
         tracks = np.zeros((nparticles, njumps+1, 2))
         wait_times = np.zeros((nparticles, njumps+1))
         
-#         def resample(particle):
-#             tmp_pos = to_array(last_pos)
-#             tmp_time = to_array(last_time)
-#             tmp_tracks = to_array(shared_tracks)
-
-#             last_idx = np.argwhere(wait_times < curr_end)[-1]
-#             tmp_time[particle] = wait_times[particle, last_idx]
-#             tmp_pos[particle, :] = tracks[particle, last_idx, :]
-#             for i in [0, 1]:
-#                 tmp_tracks[particle, iOut, i] = np.interp(tOut, wait_times[particle, :, i],
-#                                                              tracks[particle, :, i], 
-#                                                              kind='previous',
-#                                                              bounds_error=True,
-#                                                              assume_sorted=True)(tOut)
-        
         curr_end = 0
         while curr_end < endT:
             tracks[:] = self.walk(njumps, nparticles, init) + last_pos
+            init = 0
             wait_times[:] = self.get_waits(pot, tracks, njumps=njumps, nparticles=nparticles)
             wait_times[:] = np.cumsum(wait_times, axis=1) + last_time
             curr_end = np.min(wait_times[:, -1])
@@ -119,9 +108,8 @@ class Graphene_Walker(Walker):
                 last_idx = np.argwhere(wait_times[particle] < curr_end)[-1]
                 last_time[particle] = wait_times[particle, last_idx]
                 last_pos[particle, :] = tracks[particle, last_idx, :]
-                for i in [0, 1]:
-                    j = np.searchsorted(wait_times[particle, :], tOut, side='right') - 1
-                    real_space_tracks[particle, iOut, i] = tracks[particle, j, i]
+                j = np.searchsorted(wait_times[particle, :], tOut, side='right') - 1
+                real_space_tracks[particle, iOut, :] = tracks[particle, j, :]
         dfs = []
         tFinal = np.linspace(0, endT, nsteps + 1)
         for particle in range(nparticles):
@@ -129,4 +117,5 @@ class Graphene_Walker(Walker):
             tmp['particle'] = particle
             tmp['time'] = tFinal[1:]
             dfs.append(tmp)
+        print("{} done".format(self.temperature))
         return pd.concat(dfs)

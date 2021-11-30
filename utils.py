@@ -57,10 +57,11 @@ def alpha_on_real(dx, predictions, fbm_alpha, ctrw_alpha, steps=50):
             values.append(np.array([1]))
     return values
 
-def get_activations(dx, steps=50,fbm=False):
+def get_activations(dx, steps=50,fbm=False, model=None):
     N=np.shape(dx)[0]
-    net_file = 'models/{}_new_model.h5'.format(steps)
-    model = load_model(net_file)
+    if model is None:
+        net_file = 'models/{}_new_model.h5'.format(steps)
+        model = load_model(net_file)
 
     layer_name = 'dense_2'
     intermediate_layer_model = Model(inputs=model.input,
