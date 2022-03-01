@@ -19,7 +19,7 @@ class Triangular_Lattice:
         a, A = self.lattice_constant, self.amplitude
         theta_x, theta_y = 2 * np.pi * x / a, 2 * np.pi * y / (a * np.sqrt(3))
         sigma = 2 * np.cos(theta_x) * np.cos(theta_y) + np.cos(2 * theta_y)
-        return A * 2 / 9 * ((3 - sigma)) - A/2
+        return A * 2 / 9 * ((3 - sigma))
         
         
         

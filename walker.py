@@ -16,9 +16,11 @@ class Walker:
     defines the experimental parameters for the random walker
     """
 
-    def __init__(self, lattice_constant, temperature):
+    def __init__(self, lattice_constant, temperature, ediff=45.67):
         self.lattice_constant = lattice_constant # in terms of nm
         self.temperature = temperature # in terms of Kelvin
+        self.ediff = ediff / 0.0861733
+        self.hop_rate = 10**12 * np.exp(-self.ediff / self.temperature)
 
 class Graphene_Walker(Walker):
 
@@ -59,10 +61,10 @@ class Graphene_Walker(Walker):
      
     def get_waits(self, pot, tracks, njumps=100, nparticles=10, init=0):
         T = self.temperature
-        escape_rate = np.exp(-pot.U(tracks[:, :, 0], tracks[:, :, 1]) / T)
+        escape_rate = np.exp(pot.U(tracks[:, :, 0], tracks[:, :, 1]) / T) * self.hop_rate
         wait_times = np.empty((nparticles, njumps + 1))
         wait_times[:, 0] = np.zeros((nparticles))
-        wait_times[:, 1:] = np.random.exponential(escape_rate)[:, :-1]
+        wait_times[:, 1:] = np.random.exponential(1/escape_rate)[:, :-1]
         self.mean_wait = np.mean(wait_times)
         return wait_times
         
